@@ -32,26 +32,26 @@ func PruneFilters(dockerCLI config.Provider, filters client.Filters) client.Filt
 
 	// Merge filters provided through the CLI with default filters defined
 	// in the CLI-configfile.
-	for _, f := range cfg.PruneFilters {
-		k, v, ok := strings.Cut(f, "=")
+	for _, filterEntry := range cfg.PruneFilters {
+		filterKey, filterValue, ok := strings.Cut(filterEntry, "=")
 		if !ok {
 			continue
 		}
-		switch k {
+		switch filterKey {
 		case "label":
 			// "label != some-value" conflicts with "label = some-value"
-			if pruneFilters["label!"][v] {
+			if pruneFilters["label!"][filterValue] {
 				continue
 			}
-			pruneFilters.Add(k, v)
+			pruneFilters.Add(filterKey, filterValue)
 		case "label!":
 			// "label != some-value" conflicts with "label = some-value"
-			if pruneFilters["label"][v] {
+			if pruneFilters["label"][filterValue] {
 				continue
 			}
-			pruneFilters.Add(k, v)
+			pruneFilters.Add(filterKey, filterValue)
 		default:
-			pruneFilters.Add(k, v)
+			pruneFilters.Add(filterKey, filterValue)
 		}
 	}
 
