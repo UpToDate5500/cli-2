@@ -17,6 +17,10 @@ const (
 	automatedHeader = "AUTOMATED"
 )
 
+// newlineReplacer replaces newlines and carriage returns with spaces.
+// Creating it once at package level avoids allocating a new one for each call.
+var newlineReplacer = strings.NewReplacer("\n", " ", "\r", " ")
+
 // newFormat returns a Format for rendering using a searchContext.
 func newFormat(source string) formatter.Format {
 	switch source {
@@ -68,8 +72,7 @@ func (c *searchContext) Name() string {
 }
 
 func (c *searchContext) Description() string {
-	desc := strings.ReplaceAll(c.s.Description, "\n", " ")
-	desc = strings.ReplaceAll(desc, "\r", " ")
+	desc := newlineReplacer.Replace(c.s.Description)
 	if c.trunc {
 		desc = formatter.Ellipsis(desc, 45)
 	}

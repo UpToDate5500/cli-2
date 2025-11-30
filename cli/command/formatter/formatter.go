@@ -25,6 +25,10 @@ const (
 	JSONFormat         = "{{json .}}"
 )
 
+// escapeReplacer is a reusable replacer for format string escape sequences.
+// Creating it once at package level avoids allocating a new one for each call to preFormat.
+var escapeReplacer = strings.NewReplacer(`\t`, "\t", `\n`, "\n")
+
 // Format is the format string rendered using the Context
 type Format string
 
@@ -69,8 +73,7 @@ func (c *Context) preFormat() {
 	}
 
 	c.finalFormat = strings.Trim(c.finalFormat, " ")
-	r := strings.NewReplacer(`\t`, "\t", `\n`, "\n")
-	c.finalFormat = r.Replace(c.finalFormat)
+	c.finalFormat = escapeReplacer.Replace(c.finalFormat)
 }
 
 func (c *Context) parseFormat() (*template.Template, error) {
@@ -87,7 +90,7 @@ func (c *Context) postFormat(tmpl *template.Template, subContext SubContext) {
 	}
 	if c.Format.IsTable() {
 		t := tabwriter.NewWriter(c.Output, 10, 1, 3, ' ', 0)
-		buffer := bytes.NewBufferString("")
+		buffer := new(bytes.Buffer)
 		tmpl.Funcs(templates.HeaderFunctions).Execute(buffer, subContext.FullHeader())
 		buffer.WriteTo(t)
 		t.Write([]byte("\n"))
