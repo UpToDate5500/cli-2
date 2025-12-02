@@ -140,35 +140,35 @@ func createIPAMConfig(options ipamOptions) (*network.IPAM, error) {
 	if len(options.subnets) < len(options.ipRanges) || len(options.subnets) < len(options.gateways) {
 		return nil, errors.New("every ip-range or gateway must have a corresponding subnet")
 	}
-	iData := map[string]*network.IPAMConfig{}
+	ipamConfigMap := map[string]*network.IPAMConfig{}
 
 	// Populate non-overlapping subnets into consolidation map
-	for _, s := range options.subnets {
-		for k := range iData {
-			ok1, err := subnetMatches(s, k)
+	for _, subnet := range options.subnets {
+		for existingSubnet := range ipamConfigMap {
+			newContainsExisting, err := subnetMatches(subnet, existingSubnet)
 			if err != nil {
 				return nil, err
 			}
-			ok2, err := subnetMatches(k, s)
+			existingContainsNew, err := subnetMatches(existingSubnet, subnet)
 			if err != nil {
 				return nil, err
 			}
-			if ok1 || ok2 {
+			if newContainsExisting || existingContainsNew {
 				return nil, errors.New("multiple overlapping subnet configuration is not supported")
 			}
 		}
-		sn, err := netip.ParsePrefix(s)
+		subnetPrefix, err := netip.ParsePrefix(subnet)
 		if err != nil {
 			return nil, err
 		}
-		iData[s] = &network.IPAMConfig{Subnet: sn, AuxAddress: map[string]netip.Addr{}}
+		ipamConfigMap[subnet] = &network.IPAMConfig{Subnet: subnetPrefix, AuxAddress: map[string]netip.Addr{}}
 	}
 
 	// Validate and add valid ip ranges
-	for _, r := range options.ipRanges {
+	for _, ipRange := range options.ipRanges {
 		match := false
-		for _, s := range options.subnets {
-			ok, err := subnetMatches(s, r.String())
+		for _, subnet := range options.subnets {
+			ok, err := subnetMatches(subnet, ipRange.String())
 			if err != nil {
 				return nil, err
 			}
@@ -177,96 +177,96 @@ func createIPAMConfig(options ipamOptions) (*network.IPAM, error) {
 			}
 
 			// Using "IsValid" to check if a valid IPRange was already set.
-			if iData[s].IPRange.IsValid() {
-				return nil, fmt.Errorf("cannot configure multiple ranges (%s, %s) on the same subnet (%s)", r.String(), iData[s].IPRange.String(), s)
+			if ipamConfigMap[subnet].IPRange.IsValid() {
+				return nil, fmt.Errorf("cannot configure multiple ranges (%s, %s) on the same subnet (%s)", ipRange.String(), ipamConfigMap[subnet].IPRange.String(), subnet)
 			}
-			if ipRange, ok := toPrefix(r); ok {
-				iData[s].IPRange = ipRange
+			if rangePrefix, ok := toPrefix(ipRange); ok {
+				ipamConfigMap[subnet].IPRange = rangePrefix
 				match = true
 			}
 		}
 		if !match {
-			return nil, fmt.Errorf("no matching subnet for range %s", r.String())
+			return nil, fmt.Errorf("no matching subnet for range %s", ipRange.String())
 		}
 	}
 
 	// Validate and add valid gateways
-	for _, g := range options.gateways {
+	for _, gateway := range options.gateways {
 		match := false
-		for _, s := range options.subnets {
-			ok, err := subnetMatches(s, g.String())
+		for _, subnet := range options.subnets {
+			ok, err := subnetMatches(subnet, gateway.String())
 			if err != nil {
 				return nil, err
 			}
 			if !ok {
 				continue
 			}
-			if iData[s].Gateway.IsValid() {
-				return nil, fmt.Errorf("cannot configure multiple gateways (%s, %s) for the same subnet (%s)", g, iData[s].Gateway, s)
+			if ipamConfigMap[subnet].Gateway.IsValid() {
+				return nil, fmt.Errorf("cannot configure multiple gateways (%s, %s) for the same subnet (%s)", gateway, ipamConfigMap[subnet].Gateway, subnet)
 			}
-			d := iData[s]
-			d.Gateway = toNetipAddr(g)
+			ipamConfig := ipamConfigMap[subnet]
+			ipamConfig.Gateway = toNetipAddr(gateway)
 			match = true
 		}
 		if !match {
-			return nil, fmt.Errorf("no matching subnet for gateway %s", g)
+			return nil, fmt.Errorf("no matching subnet for gateway %s", gateway)
 		}
 	}
 
 	// Validate and add aux-addresses
-	for name, aa := range options.auxAddresses.GetAll() {
-		if aa == "" {
+	for name, auxAddrStr := range options.auxAddresses.GetAll() {
+		if auxAddrStr == "" {
 			continue
 		}
-		auxAddr, err := netip.ParseAddr(aa)
+		auxAddr, err := netip.ParseAddr(auxAddrStr)
 		if err != nil {
 			return nil, err
 		}
 		match := false
-		for _, s := range options.subnets {
-			ok, err := subnetMatches(s, auxAddr.String())
+		for _, subnet := range options.subnets {
+			ok, err := subnetMatches(subnet, auxAddr.String())
 			if err != nil {
 				return nil, err
 			}
 			if !ok {
 				continue
 			}
-			iData[s].AuxAddress[name] = auxAddr
+			ipamConfigMap[subnet].AuxAddress[name] = auxAddr
 			match = true
 		}
 		if !match {
-			return nil, fmt.Errorf("no matching subnet for aux-address %s", aa)
+			return nil, fmt.Errorf("no matching subnet for aux-address %s", auxAddrStr)
 		}
 	}
 
-	idl := make([]network.IPAMConfig, 0, len(iData))
-	for _, v := range iData {
-		idl = append(idl, *v)
+	ipamConfigList := make([]network.IPAMConfig, 0, len(ipamConfigMap))
+	for _, config := range ipamConfigMap {
+		ipamConfigList = append(ipamConfigList, *config)
 	}
 
 	return &network.IPAM{
 		Driver:  options.driver,
-		Config:  idl,
+		Config:  ipamConfigList,
 		Options: options.driverOpts.GetAll(),
 	}, nil
 }
 
 func subnetMatches(subnet, data string) (bool, error) {
-	var ip net.IP
+	var ipAddr net.IP
 
-	_, s, err := net.ParseCIDR(subnet)
+	_, subnetNetwork, err := net.ParseCIDR(subnet)
 	if err != nil {
 		return false, fmt.Errorf("invalid subnet: %w", err)
 	}
 
 	if strings.Contains(data, "/") {
-		ip, _, err = net.ParseCIDR(data)
+		ipAddr, _, err = net.ParseCIDR(data)
 		if err != nil {
 			return false, err
 		}
 	} else {
-		ip = net.ParseIP(data)
+		ipAddr = net.ParseIP(data)
 	}
 
-	return s.Contains(ip), nil
+	return subnetNetwork.Contains(ipAddr), nil
 }

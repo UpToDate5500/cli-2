@@ -137,15 +137,15 @@ func runCreate(ctx context.Context, dockerCli command.Cli, options createOptions
 			volOpts.ClusterVolumeSpec.AccessMode.BlockVolume = &volume.TypeBlock{}
 		}
 
-		vcr := &volume.CapacityRange{}
-		if r := options.requiredBytes.Value(); r >= 0 {
-			vcr.RequiredBytes = r
+		capacityRange := &volume.CapacityRange{}
+		if requiredBytes := options.requiredBytes.Value(); requiredBytes >= 0 {
+			capacityRange.RequiredBytes = requiredBytes
 		}
 
-		if l := options.limitBytes.Value(); l >= 0 {
-			vcr.LimitBytes = l
+		if limitBytes := options.limitBytes.Value(); limitBytes >= 0 {
+			capacityRange.LimitBytes = limitBytes
 		}
-		volOpts.ClusterVolumeSpec.CapacityRange = vcr
+		volOpts.ClusterVolumeSpec.CapacityRange = capacityRange
 
 		for key, secret := range options.secrets.GetAll() {
 			volOpts.ClusterVolumeSpec.Secrets = append(
@@ -162,14 +162,14 @@ func runCreate(ctx context.Context, dockerCli command.Cli, options createOptions
 
 		// TODO(dperny): ignore if no topology specified
 		topology := &volume.TopologyRequirement{}
-		for _, top := range options.requisiteTopology.GetSlice() {
+		for _, topologyEntry := range options.requisiteTopology.GetSlice() {
 			// each topology takes the form segment=value,segment=value
 			// comma-separated list of equal separated maps
 			segments := map[string]string{}
-			for _, segment := range strings.Split(top, ",") {
+			for _, segment := range strings.Split(topologyEntry, ",") {
 				// TODO(dperny): validate topology syntax
-				k, v, _ := strings.Cut(segment, "=")
-				segments[k] = v
+				segmentKey, segmentValue, _ := strings.Cut(segment, "=")
+				segments[segmentKey] = segmentValue
 			}
 			topology.Requisite = append(
 				topology.Requisite,
@@ -177,14 +177,14 @@ func runCreate(ctx context.Context, dockerCli command.Cli, options createOptions
 			)
 		}
 
-		for _, top := range options.preferredTopology.GetSlice() {
+		for _, topologyEntry := range options.preferredTopology.GetSlice() {
 			// each topology takes the form segment=value,segment=value
 			// comma-separated list of equal separated maps
 			segments := map[string]string{}
-			for _, segment := range strings.Split(top, ",") {
+			for _, segment := range strings.Split(topologyEntry, ",") {
 				// TODO(dperny): validate topology syntax
-				k, v, _ := strings.Cut(segment, "=")
-				segments[k] = v
+				segmentKey, segmentValue, _ := strings.Cut(segment, "=")
+				segments[segmentKey] = segmentValue
 			}
 
 			topology.Preferred = append(
@@ -196,11 +196,11 @@ func runCreate(ctx context.Context, dockerCli command.Cli, options createOptions
 		volOpts.ClusterVolumeSpec.AccessibilityRequirements = topology
 	}
 
-	res, err := dockerCli.Client().VolumeCreate(ctx, volOpts)
+	createResponse, err := dockerCli.Client().VolumeCreate(ctx, volOpts)
 	if err != nil {
 		return err
 	}
 
-	_, _ = fmt.Fprintln(dockerCli.Out(), res.Volume.Name)
+	_, _ = fmt.Fprintln(dockerCli.Out(), createResponse.Volume.Name)
 	return nil
 }

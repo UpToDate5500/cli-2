@@ -69,8 +69,8 @@ func (c *Context) preFormat() {
 	}
 
 	c.finalFormat = strings.Trim(c.finalFormat, " ")
-	r := strings.NewReplacer(`\t`, "\t", `\n`, "\n")
-	c.finalFormat = r.Replace(c.finalFormat)
+	escapeReplacer := strings.NewReplacer(`\t`, "\t", `\n`, "\n")
+	c.finalFormat = escapeReplacer.Replace(c.finalFormat)
 }
 
 func (c *Context) parseFormat() (*template.Template, error) {
@@ -86,13 +86,13 @@ func (c *Context) postFormat(tmpl *template.Template, subContext SubContext) {
 		c.Output = io.Discard
 	}
 	if c.Format.IsTable() {
-		t := tabwriter.NewWriter(c.Output, 10, 1, 3, ' ', 0)
-		buffer := bytes.NewBufferString("")
-		tmpl.Funcs(templates.HeaderFunctions).Execute(buffer, subContext.FullHeader())
-		buffer.WriteTo(t)
-		t.Write([]byte("\n"))
-		c.buffer.WriteTo(t)
-		t.Flush()
+		tabWriter := tabwriter.NewWriter(c.Output, 10, 1, 3, ' ', 0)
+		headerBuffer := bytes.NewBufferString("")
+		tmpl.Funcs(templates.HeaderFunctions).Execute(headerBuffer, subContext.FullHeader())
+		headerBuffer.WriteTo(tabWriter)
+		tabWriter.Write([]byte("\n"))
+		c.buffer.WriteTo(tabWriter)
+		tabWriter.Flush()
 	} else {
 		c.buffer.WriteTo(c.Output)
 	}

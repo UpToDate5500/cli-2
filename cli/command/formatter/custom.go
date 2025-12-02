@@ -33,11 +33,11 @@ type SubHeaderContext map[string]string
 
 // Label returns the header label for the specified string
 func (SubHeaderContext) Label(name string) string {
-	n := strings.Split(name, ".")
-	r := strings.NewReplacer("-", " ", "_", " ")
-	h := r.Replace(n[len(n)-1])
+	nameParts := strings.Split(name, ".")
+	replacer := strings.NewReplacer("-", " ", "_", " ")
+	headerLabel := replacer.Replace(nameParts[len(nameParts)-1])
 
-	return h
+	return headerLabel
 }
 
 // HeaderContext provides the subContext interface for managing headers

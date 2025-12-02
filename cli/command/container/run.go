@@ -93,11 +93,11 @@ func runRun(ctx context.Context, dockerCli command.Cli, flags *pflag.FlagSet, ro
 	}
 	proxyConfig := dockerCli.ConfigFile().ParseProxyConfig(dockerCli.Client().DaemonHost(), opts.ConvertKVStringsToMapWithNil(copts.env.GetSlice()))
 	newEnv := []string{}
-	for k, v := range proxyConfig {
-		if v == nil {
-			newEnv = append(newEnv, k)
+	for envKey, envValue := range proxyConfig {
+		if envValue == nil {
+			newEnv = append(newEnv, envKey)
 		} else {
-			newEnv = append(newEnv, k+"="+*v)
+			newEnv = append(newEnv, envKey+"="+*envValue)
 		}
 	}
 	copts.env = *opts.NewListOptsRef(&newEnv, nil)
@@ -265,33 +265,33 @@ func attachContainer(ctx context.Context, dockerCli command.Cli, containerID str
 	}
 
 	var (
-		out, cerr io.Writer
-		in        io.ReadCloser
+		stdoutWriter, stderrWriter io.Writer
+		stdinReader                io.ReadCloser
 	)
 	if options.Stdin {
-		in = dockerCli.In()
+		stdinReader = dockerCli.In()
 	}
 	if options.Stdout {
-		out = dockerCli.Out()
+		stdoutWriter = dockerCli.Out()
 	}
 	if options.Stderr {
 		if config.Tty {
-			cerr = dockerCli.Out()
+			stderrWriter = dockerCli.Out()
 		} else {
-			cerr = dockerCli.Err()
+			stderrWriter = dockerCli.Err()
 		}
 	}
 
-	ch := make(chan error, 1)
-	*errCh = ch
+	errorChannel := make(chan error, 1)
+	*errCh = errorChannel
 
 	go func() {
-		ch <- func() error {
+		errorChannel <- func() error {
 			streamer := hijackedIOStreamer{
 				streams:      dockerCli,
-				inputStream:  in,
-				outputStream: out,
-				errorStream:  cerr,
+				inputStream:  stdinReader,
+				outputStream: stdoutWriter,
+				errorStream:  stderrWriter,
 				resp:         resp.HijackedResponse,
 				tty:          config.Tty,
 				detachKeys:   options.DetachKeys,
