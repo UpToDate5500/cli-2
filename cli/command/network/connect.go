@@ -86,17 +86,17 @@ func runConnect(ctx context.Context, apiClient client.NetworkAPIClient, options 
 }
 
 func convertDriverOpt(options []string) (map[string]string, error) {
-	driverOpt := make(map[string]string)
+	driverOpts := make(map[string]string)
 	for _, opt := range options {
-		k, v, ok := strings.Cut(opt, "=")
+		optKey, optValue, ok := strings.Cut(opt, "=")
 		// TODO(thaJeztah): we should probably not accept whitespace here (both for key and value).
-		k = strings.TrimSpace(k)
-		if !ok || k == "" {
+		optKey = strings.TrimSpace(optKey)
+		if !ok || optKey == "" {
 			return nil, errors.New("invalid key/value pair format in driver options")
 		}
-		driverOpt[k] = strings.TrimSpace(v)
+		driverOpts[optKey] = strings.TrimSpace(optValue)
 	}
-	return driverOpt, nil
+	return driverOpts, nil
 }
 
 func toNetipAddrSlice(ips []net.IP) []netip.Addr {

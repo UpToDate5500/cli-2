@@ -71,26 +71,26 @@ func runInit(ctx context.Context, dockerCLI command.Cli, flags *pflag.FlagSet, o
 
 	// TODO(thaJeztah): change opts.defaultAddrPools a []netip.Prefix; see https://github.com/docker/cli/pull/6545#discussion_r2420361609
 	defaultAddrPool := make([]netip.Prefix, 0, len(opts.defaultAddrPools))
-	for _, p := range opts.defaultAddrPools {
-		if len(p.IP) == 0 {
+	for _, pool := range opts.defaultAddrPools {
+		if len(pool.IP) == 0 {
 			continue
 		}
-		ip := p.IP.To4()
-		if ip == nil {
-			ip = p.IP.To16()
+		ipBytes := pool.IP.To4()
+		if ipBytes == nil {
+			ipBytes = pool.IP.To16()
 		}
-		addr, ok := netip.AddrFromSlice(ip)
+		addr, ok := netip.AddrFromSlice(ipBytes)
 		if !ok {
-			return fmt.Errorf("invalid IP address: %s", p.IP)
+			return fmt.Errorf("invalid IP address: %s", pool.IP)
 		}
-		ones, _ := p.Mask.Size()
+		ones, _ := pool.Mask.Size()
 		defaultAddrPool = append(defaultAddrPool, netip.PrefixFrom(addr, ones))
 	}
 	var availability swarm.NodeAvailability
 	if flags.Changed(flagAvailability) {
-		switch a := swarm.NodeAvailability(strings.ToLower(opts.availability)); a {
+		switch nodeAvailability := swarm.NodeAvailability(strings.ToLower(opts.availability)); nodeAvailability {
 		case swarm.NodeAvailabilityActive, swarm.NodeAvailabilityPause, swarm.NodeAvailabilityDrain:
-			availability = a
+			availability = nodeAvailability
 		default:
 			return fmt.Errorf("invalid availability %q, only active, pause and drain are supported", opts.availability)
 		}
