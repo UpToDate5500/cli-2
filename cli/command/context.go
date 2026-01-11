@@ -18,16 +18,16 @@ type DockerContext struct {
 
 // MarshalJSON implements custom JSON marshalling
 func (dc DockerContext) MarshalJSON() ([]byte, error) {
-	s := map[string]any{}
+	contextData := map[string]any{}
 	if dc.Description != "" {
-		s["Description"] = dc.Description
+		contextData["Description"] = dc.Description
 	}
 	if dc.AdditionalFields != nil {
-		for k, v := range dc.AdditionalFields {
-			s[k] = v
+		for fieldName, fieldValue := range dc.AdditionalFields {
+			contextData[fieldName] = fieldValue
 		}
 	}
-	return json.Marshal(s)
+	return json.Marshal(contextData)
 }
 
 // UnmarshalJSON implements custom JSON marshalling
@@ -36,15 +36,15 @@ func (dc *DockerContext) UnmarshalJSON(payload []byte) error {
 	if err := json.Unmarshal(payload, &data); err != nil {
 		return err
 	}
-	for k, v := range data {
-		switch k {
+	for fieldName, fieldValue := range data {
+		switch fieldName {
 		case "Description":
-			dc.Description = v.(string)
+			dc.Description = fieldValue.(string)
 		default:
 			if dc.AdditionalFields == nil {
 				dc.AdditionalFields = make(map[string]any)
 			}
-			dc.AdditionalFields[k] = v
+			dc.AdditionalFields[fieldName] = fieldValue
 		}
 	}
 	return nil
@@ -57,12 +57,12 @@ func GetDockerContext(storeMetadata store.Metadata) (DockerContext, error) {
 		// it is totally valid, and we should return a default initialized value
 		return DockerContext{}, nil
 	}
-	res, ok := storeMetadata.Metadata.(DockerContext)
+	dockerContext, ok := storeMetadata.Metadata.(DockerContext)
 	if !ok {
 		return DockerContext{}, errors.New("context metadata is not a valid DockerContext")
 	}
 	if storeMetadata.Name == DefaultContextName {
-		res.Description = "Current DOCKER_HOST based configuration"
+		dockerContext.Description = "Current DOCKER_HOST based configuration"
 	}
-	return res, nil
+	return dockerContext, nil
 }
