@@ -23,6 +23,10 @@ const (
 	ContainerIDHeader  = "CONTAINER ID"
 )
 
+// labelReplacer is a reusable replacer for header label formatting.
+// Creating it once at package level avoids allocating a new one for each call to Label.
+var labelReplacer = strings.NewReplacer("-", " ", "_", " ")
+
 // SubContext defines what Context implementation should provide
 type SubContext interface {
 	FullHeader() any
@@ -34,10 +38,7 @@ type SubHeaderContext map[string]string
 // Label returns the header label for the specified string
 func (SubHeaderContext) Label(name string) string {
 	n := strings.Split(name, ".")
-	r := strings.NewReplacer("-", " ", "_", " ")
-	h := r.Replace(n[len(n)-1])
-
-	return h
+	return labelReplacer.Replace(n[len(n)-1])
 }
 
 // HeaderContext provides the subContext interface for managing headers

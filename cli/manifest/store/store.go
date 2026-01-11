@@ -15,6 +15,11 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+// filesafeReplacer converts reference strings to filesystem-safe names by
+// replacing colons with hyphens and slashes with underscores.
+// Creating it once at package level avoids allocating a new one for each call.
+var filesafeReplacer = strings.NewReplacer(":", "-", "/", "_")
+
 // Store manages local storage of image distribution manifests
 type Store interface {
 	Remove(listRef reference.Reference) error
@@ -149,8 +154,7 @@ func manifestToFilename(root, manifestList, manifest string) string {
 }
 
 func makeFilesafeName(ref string) string {
-	fileName := strings.ReplaceAll(ref, ":", "-")
-	return strings.ReplaceAll(fileName, "/", "_")
+	return filesafeReplacer.Replace(ref)
 }
 
 func newNotFoundError(ref string) error {

@@ -21,6 +21,10 @@ enabled: {{.Enabled}}
 `
 )
 
+// newlineStripper removes newlines and carriage returns from strings.
+// Creating it once at package level avoids allocating a new one for each call.
+var newlineStripper = strings.NewReplacer("\n", "", "\r", "")
+
 // newFormat returns a Format for rendering using a pluginContext.
 func newFormat(source string, quiet bool) formatter.Format {
 	switch source {
@@ -86,8 +90,7 @@ func (c *pluginContext) Name() string {
 }
 
 func (c *pluginContext) Description() string {
-	desc := strings.ReplaceAll(c.p.Config.Description, "\n", "")
-	desc = strings.ReplaceAll(desc, "\r", "")
+	desc := newlineStripper.Replace(c.p.Config.Description)
 	if c.trunc {
 		desc = formatter.Ellipsis(desc, 45)
 	}
