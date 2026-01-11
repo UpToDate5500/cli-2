@@ -330,22 +330,24 @@ func RunStats(ctx context.Context, dockerCLI command.Cli, options *StatsOptions)
 			}
 			cStats.mu.RUnlock()
 
-			// Start by moving the cursor to the top-left
-			_, _ = fmt.Fprint(&statsTextBuffer, "\033[H")
-
 			if err := statsFormatWrite(statsCtx, ccStats, daemonOSType, !options.NoTrunc); err != nil {
 				return err
 			}
 
+			// Build the output with escape sequences in a separate buffer
+			var outputBuffer bytes.Buffer
+			// Start by moving the cursor to the top-left
+			_, _ = fmt.Fprint(&outputBuffer, "\033[H")
+
 			for _, line := range strings.Split(statsTextBuffer.String(), "\n") {
 				// In case the new text is shorter than the one we are writing over,
 				// we'll append the "erase line" escape sequence to clear the remaining text.
-				_, _ = fmt.Fprintln(&statsTextBuffer, line, "\033[K")
+				_, _ = fmt.Fprintln(&outputBuffer, line, "\033[K")
 			}
 			// We might have fewer containers than before, so let's clear the remaining text
-			_, _ = fmt.Fprint(&statsTextBuffer, "\033[J")
+			_, _ = fmt.Fprint(&outputBuffer, "\033[J")
 
-			_, _ = fmt.Fprint(dockerCLI.Out(), statsTextBuffer.String())
+			_, _ = fmt.Fprint(dockerCLI.Out(), outputBuffer.String())
 			statsTextBuffer.Reset()
 
 			if len(ccStats) == 0 && !showAll {

@@ -166,10 +166,16 @@ func getCommandName(cmd *cobra.Command) string {
 // `... parentCommandName commandName` by traversing it's parent commands recursively
 // until the root command is reached.
 func getFullCommandName(cmd *cobra.Command) string {
-	if cmd.HasParent() {
-		return fmt.Sprintf("%s %s", getFullCommandName(cmd.Parent()), cmd.Name())
+	// Collect command names from leaf to root
+	var names []string
+	for c := cmd; c != nil; c = c.Parent() {
+		names = append(names, c.Name())
 	}
-	return cmd.Name()
+	// Reverse to get root-to-leaf order and join with spaces
+	for i, j := 0, len(names)-1; i < j; i, j = i+1, j-1 {
+		names[i], names[j] = names[j], names[i]
+	}
+	return strings.Join(names, " ")
 }
 
 // getDefaultMeter gets the default metric.Meter for the application
