@@ -140,33 +140,33 @@ func RunStats(ctx context.Context, dockerCLI command.Cli, options *StatsOptions)
 			}
 		}
 
-		eh := newEventHandler()
+		eventHandler := newEventHandler()
 		if options.All {
-			eh.setHandler(events.ActionCreate, func(e events.Message) {
-				if s := NewStats(e.Actor.ID); cStats.add(s) {
+			eventHandler.setHandler(events.ActionCreate, func(e events.Message) {
+				if containerStats := NewStats(e.Actor.ID); cStats.add(containerStats) {
 					waitFirst.Add(1)
 					log.G(ctx).WithFields(log.Fields{
 						"event":     e.Action,
 						"container": e.Actor.ID,
 					}).Debug("collecting stats for container")
-					go collect(ctx, s, apiClient, !options.NoStream, waitFirst)
+					go collect(ctx, containerStats, apiClient, !options.NoStream, waitFirst)
 				}
 			})
 		}
 
-		eh.setHandler(events.ActionStart, func(e events.Message) {
-			if s := NewStats(e.Actor.ID); cStats.add(s) {
+		eventHandler.setHandler(events.ActionStart, func(e events.Message) {
+			if containerStats := NewStats(e.Actor.ID); cStats.add(containerStats) {
 				waitFirst.Add(1)
 				log.G(ctx).WithFields(log.Fields{
 					"event":     e.Action,
 					"container": e.Actor.ID,
 				}).Debug("collecting stats for container")
-				go collect(ctx, s, apiClient, !options.NoStream, waitFirst)
+				go collect(ctx, containerStats, apiClient, !options.NoStream, waitFirst)
 			}
 		})
 
 		if !options.All {
-			eh.setHandler(events.ActionDie, func(e events.Message) {
+			eventHandler.setHandler(events.ActionDie, func(e events.Message) {
 				log.G(ctx).WithFields(log.Fields{
 					"event":     e.Action,
 					"container": e.Actor.ID,
@@ -177,20 +177,20 @@ func RunStats(ctx context.Context, dockerCLI command.Cli, options *StatsOptions)
 
 		// monitorContainerEvents watches for container creation and removal (only
 		// used when calling `docker stats` without arguments).
-		monitorContainerEvents := func(started chan<- struct{}, c chan events.Message, stopped <-chan struct{}) {
+		monitorContainerEvents := func(started chan<- struct{}, eventChannel chan events.Message, stopped <-chan struct{}) {
 			// Create a copy of the custom filters so that we don't mutate
 			// the original set of filters. Custom filters are used both
 			// to list containers and to filter events, but the "type" filter
 			// is not valid for filtering containers.
-			f := options.Filters.Clone().Add("type", string(events.ContainerEventType))
+			eventFilters := options.Filters.Clone().Add("type", string(events.ContainerEventType))
 			res := apiClient.Events(ctx, client.EventsListOptions{
-				Filters: f,
+				Filters: eventFilters,
 			})
 
 			// Whether we successfully subscribed to eventChan or not, we can now
 			// unblock the main goroutine.
 			close(started)
-			defer close(c)
+			defer close(eventChannel)
 
 			for {
 				select {
@@ -199,7 +199,7 @@ func RunStats(ctx context.Context, dockerCLI command.Cli, options *StatsOptions)
 				case <-ctx.Done():
 					return
 				case event := <-res.Messages:
-					c <- event
+					eventChannel <- event
 				case err := <-res.Err:
 					// Prevent blocking if closeChan is full or unread
 					select {
@@ -212,30 +212,30 @@ func RunStats(ctx context.Context, dockerCLI command.Cli, options *StatsOptions)
 			}
 		}
 
-		eventChan := make(chan events.Message)
-		go eh.watch(eventChan)
+		eventChannel := make(chan events.Message)
+		go eventHandler.watch(eventChannel)
 		stopped := make(chan struct{})
-		go monitorContainerEvents(started, eventChan, stopped)
+		go monitorContainerEvents(started, eventChannel, stopped)
 		defer close(stopped)
 		<-started
 
 		// Fetch the initial list of containers and collect stats for them.
 		// After the initial list was collected, we start listening for events
 		// to refresh the list of containers.
-		cs, err := apiClient.ContainerList(ctx, client.ContainerListOptions{
+		containerList, err := apiClient.ContainerList(ctx, client.ContainerListOptions{
 			All:     options.All,
 			Filters: options.Filters,
 		})
 		if err != nil {
 			return err
 		}
-		for _, ctr := range cs.Items {
-			if s := NewStats(ctr.ID); cStats.add(s) {
+		for _, ctr := range containerList.Items {
+			if containerStats := NewStats(ctr.ID); cStats.add(containerStats) {
 				waitFirst.Add(1)
 				log.G(ctx).WithFields(log.Fields{
 					"container": ctr.ID,
 				}).Debug("collecting stats for container")
-				go collect(ctx, s, apiClient, !options.NoStream, waitFirst)
+				go collect(ctx, containerStats, apiClient, !options.NoStream, waitFirst)
 			}
 		}
 
@@ -253,12 +253,12 @@ func RunStats(ctx context.Context, dockerCLI command.Cli, options *StatsOptions)
 		// Create the list of containers, and start collecting stats for all
 		// containers passed.
 		for _, ctr := range options.Containers {
-			if s := NewStats(ctr); cStats.add(s) {
+			if containerStats := NewStats(ctr); cStats.add(containerStats) {
 				waitFirst.Add(1)
 				log.G(ctx).WithFields(log.Fields{
 					"container": ctr,
 				}).Debug("collecting stats for container")
-				go collect(ctx, s, apiClient, !options.NoStream, waitFirst)
+				go collect(ctx, containerStats, apiClient, !options.NoStream, waitFirst)
 			}
 		}
 
@@ -271,8 +271,8 @@ func RunStats(ctx context.Context, dockerCLI command.Cli, options *StatsOptions)
 
 		var errs []error
 		cStats.mu.RLock()
-		for _, c := range cStats.cs {
-			if err := c.GetError(); err != nil {
+		for _, containerStat := range cStats.cs {
+			if err := containerStat.GetError(); err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -302,16 +302,16 @@ func RunStats(ctx context.Context, dockerCLI command.Cli, options *StatsOptions)
 
 	if options.NoStream {
 		cStats.mu.RLock()
-		ccStats := make([]StatsEntry, 0, len(cStats.cs))
-		for _, c := range cStats.cs {
-			ccStats = append(ccStats, c.GetStatistics())
+		collectedStats := make([]StatsEntry, 0, len(cStats.cs))
+		for _, containerStat := range cStats.cs {
+			collectedStats = append(collectedStats, containerStat.GetStatistics())
 		}
 		cStats.mu.RUnlock()
 
-		if len(ccStats) == 0 {
+		if len(collectedStats) == 0 {
 			return nil
 		}
-		if err := statsFormatWrite(statsCtx, ccStats, daemonOSType, !options.NoTrunc); err != nil {
+		if err := statsFormatWrite(statsCtx, collectedStats, daemonOSType, !options.NoTrunc); err != nil {
 			return err
 		}
 		_, _ = fmt.Fprint(dockerCLI.Out(), statsTextBuffer.String())
@@ -324,16 +324,16 @@ func RunStats(ctx context.Context, dockerCLI command.Cli, options *StatsOptions)
 		select {
 		case <-ticker.C:
 			cStats.mu.RLock()
-			ccStats := make([]StatsEntry, 0, len(cStats.cs))
-			for _, c := range cStats.cs {
-				ccStats = append(ccStats, c.GetStatistics())
+			collectedStats := make([]StatsEntry, 0, len(cStats.cs))
+			for _, containerStat := range cStats.cs {
+				collectedStats = append(collectedStats, containerStat.GetStatistics())
 			}
 			cStats.mu.RUnlock()
 
 			// Start by moving the cursor to the top-left
 			_, _ = fmt.Fprint(&statsTextBuffer, "\033[H")
 
-			if err := statsFormatWrite(statsCtx, ccStats, daemonOSType, !options.NoTrunc); err != nil {
+			if err := statsFormatWrite(statsCtx, collectedStats, daemonOSType, !options.NoTrunc); err != nil {
 				return err
 			}
 
@@ -348,7 +348,7 @@ func RunStats(ctx context.Context, dockerCLI command.Cli, options *StatsOptions)
 			_, _ = fmt.Fprint(dockerCLI.Out(), statsTextBuffer.String())
 			statsTextBuffer.Reset()
 
-			if len(ccStats) == 0 && !showAll {
+			if len(collectedStats) == 0 && !showAll {
 				return nil
 			}
 		case err, ok := <-closeChan:
@@ -381,18 +381,18 @@ func (eh *eventHandler) setHandler(action events.Action, handler func(events.Mes
 // watch ranges over the passed in event chan and processes the events based on the
 // handlers created for a given action.
 // To stop watching, close the event chan.
-func (eh *eventHandler) watch(c <-chan events.Message) {
-	for e := range c {
-		h, exists := eh.handlers[e.Action]
+func (eh *eventHandler) watch(eventChannel <-chan events.Message) {
+	for event := range eventChannel {
+		handler, exists := eh.handlers[event.Action]
 		if !exists {
 			continue
 		}
-		if e.Actor.ID == "" {
-			log.G(context.TODO()).WithField("event", e).Errorf("event handler: received %s event with empty ID", e.Action)
+		if event.Actor.ID == "" {
+			log.G(context.TODO()).WithField("event", event).Errorf("event handler: received %s event with empty ID", event.Action)
 			continue
 		}
 
-		log.G(context.TODO()).WithField("event", e).Debugf("event handler: received %s event for: %s", e.Action, e.Actor.ID)
-		go h(e)
+		log.G(context.TODO()).WithField("event", event).Debugf("event handler: received %s event for: %s", event.Action, event.Actor.ID)
+		go handler(event)
 	}
 }

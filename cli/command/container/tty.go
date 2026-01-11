@@ -53,16 +53,16 @@ func resizeTty(ctx context.Context, cli command.Cli, id string, isExec bool) err
 
 // initTtySize is to init the TTYs size to the same as the window, if there is an error, it will retry 10 times.
 func initTtySize(ctx context.Context, cli command.Cli, id string, isExec bool, resizeTtyFunc func(ctx context.Context, cli command.Cli, id string, isExec bool) error) {
-	rTTYfunc := resizeTtyFunc
-	if rTTYfunc == nil {
-		rTTYfunc = resizeTty
+	resizeTTYFunction := resizeTtyFunc
+	if resizeTTYFunction == nil {
+		resizeTTYFunction = resizeTty
 	}
-	if err := rTTYfunc(ctx, cli, id, isExec); err != nil {
+	if err := resizeTTYFunction(ctx, cli, id, isExec); err != nil {
 		go func() {
 			var err error
-			for retry := 0; retry < 10; retry++ {
-				time.Sleep(time.Duration(retry+1) * 10 * time.Millisecond)
-				if err = rTTYfunc(ctx, cli, id, isExec); err == nil {
+			for retryCount := 0; retryCount < 10; retryCount++ {
+				time.Sleep(time.Duration(retryCount+1) * 10 * time.Millisecond)
+				if err = resizeTTYFunction(ctx, cli, id, isExec); err == nil {
 					break
 				}
 			}
@@ -78,23 +78,23 @@ func MonitorTtySize(ctx context.Context, cli command.Cli, id string, isExec bool
 	initTtySize(ctx, cli, id, isExec, resizeTty)
 	if runtime.GOOS == "windows" {
 		go func() {
-			prevH, prevW := cli.Out().GetTtySize()
+			previousHeight, previousWidth := cli.Out().GetTtySize()
 			for {
 				time.Sleep(time.Millisecond * 250)
-				h, w := cli.Out().GetTtySize()
+				height, width := cli.Out().GetTtySize()
 
-				if prevW != w || prevH != h {
+				if previousWidth != width || previousHeight != height {
 					_ = resizeTty(ctx, cli, id, isExec)
 				}
-				prevH = h
-				prevW = w
+				previousHeight = height
+				previousWidth = width
 			}
 		}()
 	} else {
-		sigchan := make(chan os.Signal, 1)
-		gosignal.Notify(sigchan, signal.SIGWINCH)
+		signalChannel := make(chan os.Signal, 1)
+		gosignal.Notify(signalChannel, signal.SIGWINCH)
 		go func() {
-			for range sigchan {
+			for range signalChannel {
 				_ = resizeTty(ctx, cli, id, isExec)
 			}
 		}()

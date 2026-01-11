@@ -28,12 +28,12 @@ func BaseCommandAttributes(cmd *cobra.Command, streams Streams) []attribute.KeyV
 // can also be used for spans!
 func (cli *DockerCli) InstrumentCobraCommands(ctx context.Context, cmd *cobra.Command) {
 	// If PersistentPreRunE is nil, make it execute PersistentPreRun and return nil by default
-	ogPersistentPreRunE := cmd.PersistentPreRunE
-	if ogPersistentPreRunE == nil {
-		ogPersistentPreRun := cmd.PersistentPreRun
+	originalPersistentPreRunE := cmd.PersistentPreRunE
+	if originalPersistentPreRunE == nil {
+		originalPersistentPreRun := cmd.PersistentPreRun
 		//nolint:unparam // necessary because error will always be nil here
-		ogPersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-			ogPersistentPreRun(cmd, args)
+		originalPersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+			originalPersistentPreRun(cmd, args)
 			return nil
 		}
 		cmd.PersistentPreRun = nil
@@ -42,12 +42,12 @@ func (cli *DockerCli) InstrumentCobraCommands(ctx context.Context, cmd *cobra.Co
 	// wrap RunE in PersistentPreRunE so that this operation gets executed on all children commands
 	cmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		// If RunE is nil, make it execute Run and return nil by default
-		ogRunE := cmd.RunE
-		if ogRunE == nil {
-			ogRun := cmd.Run
+		originalRunE := cmd.RunE
+		if originalRunE == nil {
+			originalRun := cmd.Run
 			//nolint:unparam // necessary because error will always be nil here
-			ogRunE = func(cmd *cobra.Command, args []string) error {
-				ogRun(cmd, args)
+			originalRunE = func(cmd *cobra.Command, args []string) error {
+				originalRun(cmd, args)
 				return nil
 			}
 			cmd.Run = nil
@@ -55,12 +55,12 @@ func (cli *DockerCli) InstrumentCobraCommands(ctx context.Context, cmd *cobra.Co
 		cmd.RunE = func(cmd *cobra.Command, args []string) error {
 			// start the timer as the first step of every cobra command
 			stopInstrumentation := cli.StartInstrumentation(cmd)
-			cmdErr := ogRunE(cmd, args)
+			cmdErr := originalRunE(cmd, args)
 			stopInstrumentation(cmdErr)
 			return cmdErr
 		}
 
-		return ogPersistentPreRunE(cmd, args)
+		return originalPersistentPreRunE(cmd, args)
 	}
 }
 
@@ -73,8 +73,8 @@ func (cli *DockerCli) StartInstrumentation(cmd *cobra.Command) (stopInstrumentat
 	return startCobraCommandTimer(cli.MeterProvider(), baseAttrs)
 }
 
-func startCobraCommandTimer(mp metric.MeterProvider, attrs []attribute.KeyValue) func(err error) {
-	meter := getDefaultMeter(mp)
+func startCobraCommandTimer(meterProvider metric.MeterProvider, attrs []attribute.KeyValue) func(err error) {
+	meter := getDefaultMeter(meterProvider)
 	durationCounter, _ := meter.Float64Counter(
 		"command.time",
 		metric.WithDescription("Measures the duration of the cobra command"),
@@ -94,8 +94,8 @@ func startCobraCommandTimer(mp metric.MeterProvider, attrs []attribute.KeyValue)
 			metric.WithAttributes(attrs...),
 			metric.WithAttributes(cmdStatusAttrs...),
 		)
-		if mp, ok := mp.(MeterProvider); ok {
-			if err := mp.ForceFlush(ctx); err != nil {
+		if flushableProvider, ok := meterProvider.(MeterProvider); ok {
+			if err := flushableProvider.ForceFlush(ctx); err != nil {
 				otel.Handle(err)
 			}
 		}
@@ -115,11 +115,11 @@ func attributesFromError(err error) []attribute.KeyValue {
 	exitCode := 0
 	if err != nil {
 		exitCode = 1
-		if stderr, ok := err.(statusError); ok {
+		if statusErr, ok := err.(statusError); ok {
 			// StatusError should only be used for errors, and all errors should
 			// have a non-zero exit status, so only set this here if this value isn't 0
-			if stderr.StatusCode != 0 {
-				exitCode = stderr.StatusCode
+			if statusErr.StatusCode != 0 {
+				exitCode = statusErr.StatusCode
 			}
 		}
 		attrs = append(attrs, attribute.String("command.error.type", otelErrorType(err)))
@@ -155,11 +155,11 @@ func (e statusError) Error() string {
 // Note: The root command's name is excluded. If cmd is the root cmd, return ""
 func getCommandName(cmd *cobra.Command) string {
 	fullCmdName := getFullCommandName(cmd)
-	i := strings.Index(fullCmdName, " ")
-	if i == -1 {
+	spaceIndex := strings.Index(fullCmdName, " ")
+	if spaceIndex == -1 {
 		return ""
 	}
-	return fullCmdName[i+1:]
+	return fullCmdName[spaceIndex+1:]
 }
 
 // getFullCommandName gets the full cobra command name in the format
